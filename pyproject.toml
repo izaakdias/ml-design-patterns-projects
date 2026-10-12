@@ -1,22 +1,42 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "ml-design-patterns-labs"
-version = "0.1.0"
+version = "0.2.0"
 description = "Original end-to-end ML labs inspired by connected design patterns"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
   "joblib>=1.4,<2",
   "numpy>=1.26,<3",
   "pandas>=2.2,<3",
   "scikit-learn>=1.6,<2",
+  "scipy>=1.13,<2",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["E501"]
+
 [project.optional-dependencies]
+dev = [
+  "pytest>=8,<10",
+  "httpx>=0.27,<1",
+  "httpx2>=2,<3",
+  "ruff>=0.9,<1",
+]
 api = [
   "fastapi>=0.115,<1",
   "pydantic>=2.7,<3",

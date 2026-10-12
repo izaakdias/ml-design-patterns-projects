@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 from ml_patterns_lab.sensors.features import feature_row

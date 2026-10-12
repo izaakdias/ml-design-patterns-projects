@@ -12,15 +12,16 @@ from ml_patterns_lab.demand.data import make_series
 def population_stability_index(reference, recent, bins: int = 10) -> float:
     reference = np.asarray(reference, dtype=float)
     recent = np.asarray(recent, dtype=float)
+    if bins < 2 or not np.isfinite(reference).all() or not np.isfinite(recent).all():
+        raise ValueError("Finite observations and at least two bins are required.")
     if reference.size == 0 or recent.size == 0:
         raise ValueError("Both reference and recent windows must contain observations.")
 
     edges = np.unique(np.quantile(reference, np.linspace(0.0, 1.0, bins + 1)))
     if edges.size < 3:
         edges = np.linspace(float(reference.min()) - 1.0, float(reference.max()) + 1.0, bins + 1)
-    else:
-        edges[0] = -np.inf
-        edges[-1] = np.inf
+    edges[0] = -np.inf
+    edges[-1] = np.inf
 
     epsilon = 1e-6
     reference_share = np.histogram(reference, bins=edges)[0] / reference.size

@@ -1,49 +1,44 @@
-"""Stateless HTTP endpoint for Portuguese-language support-ticket triage."""
+"""HTTP contracts for Portuguese-language ticket triage."""
 
-from __future__ import annotations
+from typing import Literal
 
-from contextlib import asynccontextmanager
+from pydantic import Field
 
-from fastapi import FastAPI, Request
-from pydantic import BaseModel, Field
-
-from ml_patterns_lab.shared import load_bundle
+from ml_patterns_lab.serving import (
+    APIModel,
+    ModelDependency,
+    Probability,
+    VersionedResponse,
+    create_app,
+)
 from ml_patterns_lab.support.cascade import route_ticket
 
 
-class TicketRequest(BaseModel):
+class TicketRequest(APIModel):
     text: str = Field(min_length=8, max_length=2000)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    bundle, metadata = load_bundle("support")
-    app.state.bundle = bundle
-    app.state.metadata = metadata
-    yield
+class TicketResponse(VersionedResponse):
+    intent: Literal["cobranca", "tecnico", "conta", "entrega", "revisao_humana"]
+    confidence: Probability
+    stage: Literal["fast", "expert", "neutral"]
+    human_review_required: bool
 
 
-app = FastAPI(
+app = create_app(
+    "support",
     title="Support-ticket triage",
-    description="Educational Portuguese-language triage example using generated text.",
-    version="0.1.0",
-    lifespan=lifespan,
+    description="Synthetic Portuguese tickets evaluated with disjoint phrase families.",
 )
 
 
-@app.get("/health")
-def health(request: Request) -> dict:
-    return {"status": "ok", "model_version": request.app.state.metadata["run_id"]}
-
-
-@app.post("/predict")
-def predict(payload: TicketRequest, request: Request) -> dict:
-    metadata = request.app.state.metadata
+@app.post("/predict", response_model=TicketResponse)
+def predict(payload: TicketRequest, artifact: ModelDependency) -> dict:
     result = route_ticket(
-        request.app.state.bundle["fast"],
-        request.app.state.bundle["expert"],
+        artifact.bundle["fast"],
+        artifact.bundle["expert"],
         payload.text,
-        float(metadata["fast_threshold"]),
-        float(metadata["human_review_threshold"]),
+        artifact.metadata["fast_threshold"],
+        artifact.metadata["human_review_threshold"],
     )
-    return {**result, "model_version": metadata["run_id"]}
+    return {**result, "model_version": artifact.run_id}

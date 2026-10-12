@@ -1,5 +1,7 @@
 # Machine Learning Design Patterns — projetos práticos
 
+[![Quality](https://github.com/izaakdias/ml-design-patterns-projects/actions/workflows/quality.yml/badge.svg)](https://github.com/izaakdias/ml-design-patterns-projects/actions/workflows/quality.yml)
+
 Oito projetos autorais e executáveis que combinam padrões de ML ao longo do ciclo de vida: preparação dos dados, treinamento, avaliação e inferência. Todos usam dados sintéticos gerados localmente.
 
 O capítulo final do livro conecta padrões ao ciclo de vida de projetos de ML, mas não traz uma lista de exercícios. Este repositório transforma essa conexão em laboratórios independentes. Os projetos são originais e não reproduzem os notebooks nem o código do livro.
@@ -27,11 +29,32 @@ Requer Python 3.11 ou mais recente. Crie um ambiente virtual e instale o pacote:
     source .venv/bin/activate
     python -m pip install -e ".[api]"
 
-O extra api instala FastAPI e Uvicorn. Os modelos e metadados são gravados em artifacts/, ignorada pelo Git.
+O extra api instala FastAPI e Uvicorn. Para desenvolvimento e testes, use o extra dev junto com api. Os modelos e metadados são gravados em artifacts/, ignorada pelo Git.
+
+Para reproduzir as dependências registradas em uv.lock, instale [uv](https://docs.astral.sh/uv/getting-started/installation/) e execute:
+
+    uv sync --locked --extra api --extra dev
+
+Se uv foi instalado dentro da própria .venv, acrescente --inexact para preservar essa ferramenta no ambiente. A instalação com pip aceita as faixas do pyproject; a instalação com uv usa as versões do lockfile para a versão de Python escolhida.
+
+## Arquitetura e qualidade
+
+O [guia de arquitetura](docs/architecture.md) explica os limites entre domínio, treino, HTTP e registro, junto com as correções de avaliação. O [guia de projetos](docs/projects.md) traz os corpos das requisições e as métricas de cada laboratório. A [execução de validação](docs/validation.md) registra a evidência local.
+
+Depois de instalar os extras api e dev, execute:
+
+    make check
+
+A suíte treina os oito projetos em um registro temporário, testa suas APIs e verifica invariantes de dados, políticas e publicação de modelos. Ruff verifica estilo e problemas estáticos. O workflow Quality repete os checks em Python 3.11 e 3.14 e constrói os pacotes.
 
 ## Treinar os projetos
 
-Execute a partir da raiz do repositório:
+Execute a partir da raiz do repositório. A CLI central permite um projeto ou todos:
+
+    python -m ml_patterns_lab train all
+    python -m ml_patterns_lab train fraud
+
+Os comandos individuais também continuam disponíveis:
 
     python -m ml_patterns_lab.churn.train
     python -m ml_patterns_lab.demand.train
@@ -42,11 +65,23 @@ Execute a partir da raiz do repositório:
     python -m ml_patterns_lab.sensors.train
     python -m ml_patterns_lab.mlops.run
 
-Cada execução cria uma versão de modelo com metadados e atualiza o ponteiro da versão atual em artifacts/<projeto>/latest.json.
+Cada execução cria uma versão completa com modelo, metadados e manifesto SHA-256; então atualiza atomicamente artifacts/<projeto>/latest.json. Checkpoints de visão não são promovidos automaticamente. Modelos tabulares calibram probabilidades dentro do treino e escolhem limiares numa validação separada.
+
+É possível listar versões, selecionar uma ao servir e promover uma versão anterior:
+
+    python -m ml_patterns_lab list churn
+    python -m ml_patterns_lab serve churn --port 8001 --model-version RUN_ID
+    python -m ml_patterns_lab promote churn RUN_ID
+
+Use MLDP_ARTIFACTS_DIR ou --artifacts-dir antes do subcomando para escolher outro registro. MLDP_MODEL_VERSION fixa uma versão para as APIs iniciadas diretamente com Uvicorn. Uma API já iniciada mantém o modelo carregado até ser reiniciada. Artefatos da versão anterior sem manifesto precisam ser retreinados.
 
 ## Servir previsões
 
-Treine o projeto desejado antes de iniciar sua API:
+Treine o projeto desejado antes de iniciar sua API. Pela CLI central:
+
+    python -m ml_patterns_lab serve fraud --port 8004
+
+Ou inicie diretamente com Uvicorn:
 
     uvicorn ml_patterns_lab.churn.api:app --host 127.0.0.1 --port 8001
     uvicorn ml_patterns_lab.demand.api:app --host 127.0.0.1 --port 8002
@@ -67,7 +102,7 @@ Exemplo de solicitação para support:
 
 Exemplo de recomendação:
 
-    {"user_id": "user_001", "limit": 10}
+    {"user_id": "user-001", "limit": 10}
 
 A página /docs mostra os esquemas completos e permite enviar exemplos.
 
@@ -79,7 +114,7 @@ Para reproduzir um fluxo simples de telemetria com janelas móveis:
 
     python -m ml_patterns_lab.sensors.monitor
 
-O índice PSI de demand é apenas um sinal de triagem; o limite configurado é heurístico e precisa ser calibrado para dados e custos reais. Os projetos fraud, vision e sensores mantêm encaminhamento para revisão humana quando o risco ou a confiança pede avaliação adicional.
+O índice PSI de demand é apenas um sinal de triagem; o limite configurado é heurístico e precisa ser calibrado para dados e custos reais. Fraud, vision e support oferecem encaminhamento para revisão humana. Sensors informa alertas e desvios para investigação.
 
 ## Estrutura
 
@@ -92,7 +127,14 @@ O índice PSI de demand é apenas um sinal de triagem; o limite configurado é h
       recommend/   recomendação híbrida, busca e features compartilhadas
       sensors/     detecção de anomalias em janelas de telemetria
       mlops/       fluxo repetível de treino, avaliação e registro
-      shared.py    artefatos versionados e carregamento da versão atual
+      shared.py    registro, integridade e promoção de versões
+      serving.py   ciclo de vida HTTP e contratos compartilhados
+      tabular.py   classificadores calibrados e coeficientes globais
+      evaluation.py métricas e políticas de limiar
+      __main__.py  CLI para treino, serviço, monitoramento e versões
+    tests/         regressões e integração com modelos reais
+    docs/          arquitetura, projetos e validação
+    uv.lock        dependências resolvidas por versão de Python
 
 ## Referências
 

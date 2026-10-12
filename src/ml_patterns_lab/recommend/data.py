@@ -5,7 +5,6 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-
 CATEGORY_TERMS = {
     "ciencia": ["astronomia", "biologia", "clima", "experimento", "laboratorio"],
     "culinaria": ["receita", "cozinha", "ingrediente", "forno", "sabor"],
@@ -68,7 +67,9 @@ def make_catalog(seed: int = 61) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFra
             replace=False,
         )
         other_categories = [category for category in categories if category != preferred_category]
-        other_items = np.concatenate([item_ids_by_category[category] for category in other_categories])
+        other_items = np.concatenate(
+            [item_ids_by_category[category] for category in other_categories]
+        )
         exploration_items = rng.choice(other_items, size=4, replace=False)
         for item_id in np.concatenate([favorite_items, exploration_items]):
             interaction_rows.append({"user_id": user_id, "item_id": str(item_id)})

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import numpy as np
 from sklearn.ensemble import IsolationForest
@@ -13,16 +14,18 @@ from ml_patterns_lab.sensors.features import FEATURE_NAMES, build_windowed_datas
 from ml_patterns_lab.shared import save_bundle
 
 
-def main() -> None:
+def train() -> tuple[Path, dict]:
     telemetry = make_sensor_data()
-    features, labels, _ = build_windowed_dataset(telemetry)
-    train_end = int(len(features) * 0.70)
-    validation_end = int(len(features) * 0.85)
-    X_train, y_train = features.iloc[:train_end], labels[:train_end]
-    X_validation, y_validation = features.iloc[train_end:validation_end], labels[train_end:validation_end]
-    X_test, y_test = features.iloc[validation_end:], labels[validation_end:]
+    # Split raw readings first so windows cannot share readings across partitions.
+    train_end = int(len(telemetry) * 0.70)
+    validation_end = int(len(telemetry) * 0.85)
+    X_train, y_train, _ = build_windowed_dataset(telemetry.iloc[:train_end])
+    X_validation, y_validation, _ = build_windowed_dataset(telemetry.iloc[train_end:validation_end])
+    X_test, y_test, _ = build_windowed_dataset(telemetry.iloc[validation_end:])
 
     normal_training = X_train[y_train == 0]
+    if normal_training.empty:
+        raise ValueError("Normal training windows are required.")
     model = IsolationForest(
         n_estimators=180,
         max_samples="auto",
@@ -33,6 +36,8 @@ def main() -> None:
     model.fit(normal_training)
     validation_risk = -model.score_samples(X_validation)
     normal_validation = validation_risk[y_validation == 0]
+    if not normal_validation.size:
+        raise ValueError("Normal validation windows are required to calibrate alerts.")
     threshold = float(np.quantile(normal_validation, 0.98))
 
     test_risk = -model.score_samples(X_test)
@@ -61,9 +66,20 @@ def main() -> None:
             "threshold": threshold,
             "window_size": 24,
             "data_seed": 71,
+            "label_semantics": "any_anomaly_in_last_24_readings",
+            "split_strategy": "chronological_raw_readings_before_windowing",
         },
     )
-    print(json.dumps({"artifact": str(version_path), "metadata": metadata}, indent=2, ensure_ascii=False))
+    return version_path, metadata
+
+
+def main() -> None:
+    version_path, metadata = train()
+    print(
+        json.dumps(
+            {"artifact": str(version_path), "metadata": metadata}, indent=2, ensure_ascii=False
+        )
+    )
 
 
 if __name__ == "__main__":

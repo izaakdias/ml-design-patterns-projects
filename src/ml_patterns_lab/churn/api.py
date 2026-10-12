@@ -1,18 +1,20 @@
-"""Stateless HTTP inference for customer-success prioritization."""
+"""HTTP contracts for customer-success prioritization."""
 
-from __future__ import annotations
-
-from contextlib import asynccontextmanager
 from typing import Literal
 
-import pandas as pd
-from fastapi import FastAPI, Request
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from ml_patterns_lab.shared import load_bundle
+from ml_patterns_lab.churn.inference import score_customer
+from ml_patterns_lab.serving import (
+    APIModel,
+    ModelDependency,
+    Probability,
+    VersionedResponse,
+    create_app,
+)
 
 
-class ChurnRequest(BaseModel):
+class ChurnRequest(APIModel):
     tenure_months: int = Field(ge=0, le=120)
     monthly_spend: float = Field(gt=0, le=1000)
     support_tickets_90d: int = Field(ge=0, le=100)
@@ -20,37 +22,20 @@ class ChurnRequest(BaseModel):
     region: Literal["norte", "sul", "leste", "oeste"]
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    bundle, metadata = load_bundle("churn")
-    app.state.model = bundle
-    app.state.metadata = metadata
-    yield
+class ChurnResponse(VersionedResponse):
+    churn_probability: Probability
+    threshold: Probability
+    recommendation: Literal["review_for_retention", "no_alert"]
 
 
-app = FastAPI(
+app = create_app(
+    "churn",
     title="Customer-success churn prioritization",
-    description="Educational example using synthetic data. Review each recommendation with a person.",
-    version="0.1.0",
-    lifespan=lifespan,
+    description="Calibrated synthetic customer-risk model with a review policy.",
 )
 
 
-@app.get("/health")
-def health(request: Request) -> dict:
-    return {"status": "ok", "model_version": request.app.state.metadata["run_id"]}
-
-
-@app.post("/predict")
-def predict(payload: ChurnRequest, request: Request) -> dict:
-    model = request.app.state.model
-    metadata = request.app.state.metadata
-    features = pd.DataFrame([payload.model_dump()])
-    probability = float(model.predict_proba(features)[0, 1])
-    threshold = float(metadata["threshold"])
-    return {
-        "churn_probability": round(probability, 4),
-        "threshold": round(threshold, 4),
-        "recommendation": "review_for_retention" if probability >= threshold else "no_alert",
-        "model_version": metadata["run_id"],
-    }
+@app.post("/predict", response_model=ChurnResponse)
+def predict(payload: ChurnRequest, artifact: ModelDependency) -> dict:
+    result = score_customer(artifact.bundle, payload.model_dump(), artifact.metadata["threshold"])
+    return {**result, "model_version": artifact.run_id}

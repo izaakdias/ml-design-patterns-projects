@@ -9,10 +9,12 @@ from ml_patterns_lab.sensors.features import WINDOW_SIZE
 
 class RollingWindow:
     def __init__(self, window_size: int = WINDOW_SIZE):
-        self._readings = deque(maxlen=window_size)
+        if window_size != WINDOW_SIZE:
+            raise ValueError(f"The trained feature contract requires {WINDOW_SIZE} readings.")
+        self._readings: deque[dict] = deque(maxlen=window_size)
 
     def append(self, reading: dict) -> list[dict] | None:
-        self._readings.append(reading)
+        self._readings.append(dict(reading))
         if len(self._readings) < self._readings.maxlen:
             return None
-        return list(self._readings)
+        return [dict(item) for item in self._readings]

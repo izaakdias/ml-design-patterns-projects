@@ -5,7 +5,6 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-
 FEATURE_NAMES = [
     "lag_1",
     "lag_24",
@@ -19,6 +18,8 @@ FEATURE_NAMES = [
 
 def make_feature_row(history: list[float] | np.ndarray, target_timestamp) -> dict[str, float]:
     values = np.asarray(history, dtype=float)
+    if values.ndim != 1 or not np.isfinite(values).all() or np.any(values < 0):
+        raise ValueError("History must be a finite, nonnegative one-dimensional series.")
     if values.size < 24:
         raise ValueError("At least 24 historical hourly values are required.")
 

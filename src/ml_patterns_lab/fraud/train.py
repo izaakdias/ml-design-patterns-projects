@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import numpy as np
 from sklearn.metrics import average_precision_score, precision_score, recall_score
 from sklearn.model_selection import train_test_split
 
+from ml_patterns_lab.evaluation import binary_metrics
 from ml_patterns_lab.fraud.data import FEATURES, make_transactions
 from ml_patterns_lab.fraud.model import (
     build_model,
@@ -26,7 +28,7 @@ def _policy_metrics(labels: np.ndarray, probabilities: np.ndarray, threshold: fl
     }
 
 
-def main() -> None:
+def train() -> tuple[Path, dict]:
     data = make_transactions()
     X = data[FEATURES]
     y = data["fraud"].to_numpy()
@@ -55,8 +57,7 @@ def main() -> None:
         review_threshold,
     )
 
-    model = build_model()
-    model.fit(X_train_valid, y_train_valid)
+    model = validation_model
     probabilities = model.predict_proba(X_test)[:, 1]
     baseline = (
         (X_test["merchant_risk_score"].to_numpy() >= 0.82)
@@ -72,10 +73,15 @@ def main() -> None:
             "recall": round(float(recall_score(y_test, baseline, zero_division=0)), 4),
             "review_rate": round(float(np.mean(baseline)), 4),
         },
-        "urgent_review_rate": round(float(np.mean(probabilities >= urgent_threshold)), 4),
+        "urgent_review_rate": round(float(np.mean(probabilities >= urgent_threshold)), 4)
+        if urgent_threshold is not None
+        else 0.0,
+        "calibrated_model": binary_metrics(
+            y_test, probabilities >= review_threshold, probabilities
+        ),
         "thresholds_selected_on_validation": {
             "review": round(review_threshold, 4),
-            "urgent_review": round(urgent_threshold, 4),
+            "urgent_review": round(urgent_threshold, 4) if urgent_threshold is not None else None,
         },
     }
     version_path, metadata = save_bundle(
@@ -90,9 +96,24 @@ def main() -> None:
             "metrics": metrics,
             "data_seed": 43,
             "data_rows": int(len(data)),
+            "split_rows": {
+                "train": len(X_train),
+                "validation": len(X_validation),
+                "test": len(X_test),
+            },
+            "probability_calibration": "sigmoid_out_of_fold_training_only",
         },
     )
-    print(json.dumps({"artifact": str(version_path), "metadata": metadata}, indent=2, ensure_ascii=False))
+    return version_path, metadata
+
+
+def main() -> None:
+    version_path, metadata = train()
+    print(
+        json.dumps(
+            {"artifact": str(version_path), "metadata": metadata}, indent=2, ensure_ascii=False
+        )
+    )
 
 
 if __name__ == "__main__":

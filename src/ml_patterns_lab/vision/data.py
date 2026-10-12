@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 
-
 IMAGE_SIDE = 24
 IMAGE_SIZE = IMAGE_SIDE * IMAGE_SIDE
 
@@ -48,6 +47,10 @@ def make_images(
 
 def quantize_images(images: np.ndarray, bits: int = 5) -> np.ndarray:
     """Simulate reduced-precision pixel input before model inference."""
+    if not isinstance(bits, int) or not 1 <= bits <= 16:
+        raise ValueError("bits must be an integer between 1 and 16.")
     levels = (1 << bits) - 1
     values = np.asarray(images, dtype=np.float32)
+    if not np.isfinite(values).all() or np.any(values < 0) or np.any(values > 1):
+        raise ValueError("Pixels must be finite values between zero and one.")
     return (np.round(values * levels) / levels).astype(np.float32)

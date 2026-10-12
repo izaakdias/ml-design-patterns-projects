@@ -1,18 +1,20 @@
-"""Serving endpoint for the currently registered maintenance-risk model."""
+"""HTTP contracts for the registered maintenance-risk model."""
 
-from __future__ import annotations
-
-from contextlib import asynccontextmanager
 from typing import Literal
 
-import pandas as pd
-from fastapi import FastAPI, Request
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from ml_patterns_lab.shared import load_bundle
+from ml_patterns_lab.mlops.inference import score_maintenance
+from ml_patterns_lab.serving import (
+    APIModel,
+    ModelDependency,
+    Probability,
+    VersionedResponse,
+    create_app,
+)
 
 
-class MaintenanceRequest(BaseModel):
+class MaintenanceRequest(APIModel):
     hours_since_service: float = Field(ge=0, le=20000)
     temperature_c: float = Field(ge=-10, le=150)
     vibration_mm_s: float = Field(ge=0, le=30)
@@ -20,40 +22,22 @@ class MaintenanceRequest(BaseModel):
     machine_type: Literal["pump", "compressor", "conveyor"]
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    bundle, metadata = load_bundle("mlops")
-    app.state.bundle = bundle
-    app.state.metadata = metadata
-    yield
+class MaintenanceResponse(VersionedResponse):
+    maintenance_risk: Probability
+    threshold: Probability
+    recommendation: Literal["schedule_maintenance_review", "continue_monitoring"]
 
 
-app = FastAPI(
+app = create_app(
+    "mlops",
     title="Maintenance-risk model service",
-    description="Synthetic equipment example produced by the reproducible workflow.",
-    version="0.1.0",
-    lifespan=lifespan,
+    description="Calibrated synthetic equipment model from the reproducible workflow.",
 )
 
 
-@app.get("/health")
-def health(request: Request) -> dict:
-    return {"status": "ok", "model_version": request.app.state.metadata["run_id"]}
-
-
-@app.post("/predict")
-def predict(payload: MaintenanceRequest, request: Request) -> dict:
-    metadata = request.app.state.metadata
-    bundle = request.app.state.bundle
-    features = pd.DataFrame([payload.model_dump()])
-    probability = float(bundle["model"].predict_proba(features)[0, 1])
+@app.post("/predict", response_model=MaintenanceResponse)
+def predict(payload: MaintenanceRequest, artifact: ModelDependency) -> dict:
     return {
-        "maintenance_risk": round(probability, 4),
-        "threshold": round(float(bundle["threshold"]), 4),
-        "recommendation": (
-            "schedule_maintenance_review"
-            if probability >= float(bundle["threshold"])
-            else "continue_monitoring"
-        ),
-        "model_version": metadata["run_id"],
+        **score_maintenance(artifact.bundle, payload.model_dump()),
+        "model_version": artifact.run_id,
     }
