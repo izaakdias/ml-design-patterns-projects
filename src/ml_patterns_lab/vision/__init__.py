@@ -1,0 +1,1 @@
+"""Synthetic visual-inspection laboratory."""
